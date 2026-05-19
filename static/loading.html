@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>TerminalHub — 导出中…</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;
+     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+     background:#0f172a;color:#e5eef9}
+.shell{width:min(500px,100%);background:rgba(15,23,42,.96);
+       border:1px solid rgba(148,163,184,.15);border-radius:20px;
+       box-shadow:0 24px 56px rgba(0,0,0,.4);padding:28px 24px 22px;
+       transition:border-color .3s}
+.shell.done {border-color:rgba(34,197,94,.4)}
+.shell.error{border-color:rgba(239,68,68,.4)}
+.brand{display:flex;align-items:center;gap:9px;margin-bottom:20px;opacity:.5;
+       font-size:.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.brand-icon{width:20px;height:20px;border-radius:6px;
+            background:linear-gradient(135deg,#409eff,#67c23a);
+            display:grid;place-items:center;font-size:10px}
+.head{display:flex;align-items:flex-start;gap:14px;margin-bottom:6px}
+.spinner{width:22px;height:22px;border-radius:50%;flex-shrink:0;margin-top:2px;
+         border:2.5px solid rgba(64,158,255,.2);border-top-color:#409eff;
+         animation:spin .75s linear infinite;transition:all .3s}
+.shell.done  .spinner{border:2.5px solid #22c55e;animation:none;
+                      display:grid;place-items:center}
+.shell.done  .spinner::after{content:'✓';color:#22c55e;font-size:12px;font-weight:700}
+.shell.error .spinner{border:2.5px solid #ef4444;animation:none;
+                      display:grid;place-items:center}
+.shell.error .spinner::after{content:'✕';color:#ef4444;font-size:12px;font-weight:700}
+@keyframes spin{to{transform:rotate(360deg)}}
+.head-text{}
+h2{font-size:1.05rem;font-weight:700;letter-spacing:-.01em;line-height:1.3}
+.hint{color:#94a3b8;font-size:.82rem;margin-top:3px;min-height:1.2em;
+      line-height:1.5;word-break:break-all;transition:color .2s}
+.shell.done  .hint{color:#86efac}
+.shell.error .hint{color:#fca5a5}
+.progress-bar-track{height:4px;border-radius:99px;background:rgba(64,158,255,.12);
+                    overflow:hidden;margin:18px 0 16px}
+.progress-bar-fill{height:100%;width:8%;border-radius:99px;
+                   background:linear-gradient(90deg,#409eff,#67c23a);
+                   transition:width .5s ease}
+.shell.done  .progress-bar-fill{background:#22c55e;width:100%}
+.shell.error .progress-bar-fill{background:#ef4444}
+.progress-steps{display:flex;flex-direction:column;gap:8px}
+.progress-step{display:flex;align-items:center;gap:10px;font-size:.83rem;
+               color:#475569;transition:color .25s}
+.progress-step.active {color:#7ec8ff;font-weight:600}
+.progress-step.done-s {color:#4ade80}
+.progress-step.error-s{color:#f87171}
+.step-icon{width:18px;height:18px;border-radius:50%;background:#1e293b;
+           flex-shrink:0;display:grid;place-items:center;font-size:9px;
+           border:1.5px solid #334155;transition:all .25s}
+.progress-step.active  .step-icon{background:#1d4ed8;border-color:#3b82f6;
+                                   box-shadow:0 0 0 3px rgba(59,130,246,.2)}
+.progress-step.done-s  .step-icon{background:#166534;border-color:#22c55e}
+.progress-step.error-s .step-icon{background:#7f1d1d;border-color:#ef4444}
+.step-icon::after{content:'·';color:#64748b}
+.progress-step.active  .step-icon::after{content:'';width:6px;height:6px;border-radius:50%;
+                                          background:#60a5fa;display:block;animation:pulse 1s infinite}
+.progress-step.done-s  .step-icon::after{content:'✓';color:#4ade80;font-size:9px;animation:none}
+.progress-step.error-s .step-icon::after{content:'✕';color:#f87171;font-size:9px;animation:none}
+@keyframes pulse{0%,100%{opacity:.6;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+</style>
+</head>
+<body>
+<div class="shell" id="loadShell">
+  <div class="brand">
+    <div class="brand-icon">⬡</div>
+    <span>TerminalHub</span>
+  </div>
+  <div class="head">
+    <div class="spinner" id="loadSpinner"></div>
+    <div class="head-text">
+      <h2 id="loadTitle">正在导出报告…</h2>
+      <div class="hint" id="loadHint">请稍等…</div>
+    </div>
+  </div>
+  <div class="progress-bar-track">
+    <div class="progress-bar-fill" id="loadBar"></div>
+  </div>
+  <div class="progress-steps" id="loadSteps"></div>
+</div>
+
+<script>
+var _KEY = 'th-load-state';
+
+function esc(s){ return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function updateUI(d){
+  if(!d)return;
+  var done=d.status==='done', err=d.status==='error';
+  var sh=document.getElementById('loadShell');
+  if(sh) sh.className='shell'+(done?' done':err?' error':'');
+  var t=document.getElementById('loadTitle');
+  if(t&&d.title) t.textContent=d.title;
+  var h=document.getElementById('loadHint');
+  if(h&&d.hint!==undefined) h.textContent=d.hint;
+
+  var n=(d.steps||[]).length, ai=Math.max(d.activeIndex||0,0);
+  var pct=n?(done?100:Math.max(8,Math.round((ai+1)/n*90))):8;
+  var bar=document.getElementById('loadBar');
+  if(bar) bar.style.width=pct+'%';
+
+  var stepsEl=document.getElementById('loadSteps');
+  if(stepsEl&&d.steps&&d.steps.length){
+    stepsEl.innerHTML=d.steps.map(function(s,i){
+      var cls='progress-step';
+      if(i<ai) cls+=' done-s';
+      else if(i===ai) cls+=err?' error-s':' active';
+      return '<div class="'+cls+'"><div class="step-icon"></div><span>'+esc(s)+'</span></div>';
+    }).join('');
+  }
+}
+
+// Primary: localStorage storage event (fires when main tab updates the key)
+window.addEventListener('storage',function(e){
+  if(e.key!==_KEY)return;
+  try{ updateUI(JSON.parse(e.newValue)); }catch(_){}
+});
+
+// Backup: postMessage from opener
+window.addEventListener('message',function(e){
+  var d=e.data;
+  if(!d||d.type!=='th-load')return;
+  updateUI(d);
+});
+
+// On load: read whatever state is already in localStorage
+function boot(){
+  try{
+    var s=JSON.parse(localStorage.getItem(_KEY)||'null');
+    if(s) updateUI(s);
+  }catch(_){}
+}
+
+// Poll every 500ms as final safety net (handles any missed events)
+setInterval(function(){
+  try{
+    var s=JSON.parse(localStorage.getItem(_KEY)||'null');
+    if(s&&s._seq!==window._lastSeq){
+      window._lastSeq=s._seq;
+      updateUI(s);
+    }
+  }catch(_){}
+},500);
+
+boot();
+</script>
+</body>
+</html>
